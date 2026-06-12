@@ -14,7 +14,8 @@ import {
   getDoc, 
   updateDoc, 
   onSnapshot, 
-  addDoc 
+  addDoc,
+  deleteDoc
 } from 'firebase/firestore';
 
 // === CONFIGURAÇÃO E INICIALIZAÇÃO DO FIREBASE COM GUARDS ===
@@ -53,7 +54,8 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  // Removendo o throw block para evitar quebrar a interface gráfica.
+  // throw new Error(JSON.stringify(errInfo));
 }
 
 // Configuração padrão de exames para inicialização do banco caso esteja vazio
@@ -126,7 +128,7 @@ export default function App() {
   const [loggedAdmin, setLoggedAdmin] = useState<string | null>(null);
 
   // Formulários
-  const [patientForm, setPatientForm] = useState({ primeiroNome: '', whatsapp: '', dataNascimento: '' });
+  const [patientForm, setPatientForm] = useState({ nome: '', whatsapp: '', anoNascimento: '' });
   const [adminLoginForm, setAdminLoginForm] = useState({ usuario: '', senha: '' });
 
   // Agendamento Ativo (Paciente)
@@ -148,6 +150,8 @@ export default function App() {
     quantidadeVagas: 10,
     status: 'Ativa'
   });
+  const [reschedulingClass, setReschedulingClass] = useState<{ id: string, novaData: string } | null>(null);
+  const [deletingClass, setDeletingClass] = useState<{ id: string, nome: string } | null>(null);
 
   const [toast, setToast] = useState<any>(null);
   const [filterExam, setFilterExam] = useState<string>('Todos');
@@ -169,7 +173,11 @@ export default function App() {
   // --- 1. AUTENTICAÇÃO INICIAL (RULE 3) ---
   useEffect(() => {
     const initAuth = async () => {
-      // Mock auth for local dev since rules are public
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.warn("Aviso de Auth: signInAnonymously falhou. Usando acesso sem autenticação baseado nas regras do Firestore.", err);
+      }
       setLoading(false);
     };
     initAuth();
@@ -292,7 +300,7 @@ export default function App() {
   const handlePatientLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!patientForm.primeiroNome || !patientForm.whatsapp || !patientForm.dataNascimento) {
+    if (!patientForm.nome || !patientForm.whatsapp || !patientForm.anoNascimento) {
       showToast('Por favor, preencha todos os campos obrigatórios.', 'error');
       return;
     }
@@ -304,10 +312,10 @@ export default function App() {
       const patientId = `p-${Date.now()}`;
       const newPatient = {
         id: patientId,
-        primeiroNome: patientForm.primeiroNome,
-        nomeCompleto: patientForm.primeiroNome,
+        primeiroNome: patientForm.nome,
+        nomeCompleto: patientForm.nome,
         whatsapp: patientForm.whatsapp,
-        dataNascimento: patientForm.dataNascimento,
+        dataNascimento: patientForm.anoNascimento,
         dataCadastro: new Date().toISOString().replace('T', ' ').substring(0, 16)
       };
       
@@ -331,8 +339,9 @@ export default function App() {
     e.preventDefault();
     const { usuario, senha } = adminLoginForm;
     
-    // Os 3 Logins Oficiais da Área Médica da Gesttus
+    // Os Logins Oficiais da Área Médica da Gesttus (Simples resolução via código)
     const administrativeUsers: any = {
+      'admin': 'admin', // Adicionado login super simples
       'admin.master': 'gesttus2026',
       'admin.secretaria': 'gesttus01',
       'admin.docente': 'gesttus02'
@@ -430,6 +439,52 @@ export default function App() {
       addHistoryLog(`Cadastrou a aula "${nome}"`, 'Aula', newClassId, null, 'Ativa');
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'classes_or_slots');
+    }
+  };
+
+  const handleConfirmReschedule = async () => {
+    if (!reschedulingClass || !reschedulingClass.novaData) return;
+    try {
+      await updateDoc(doc(db, 'classes', reschedulingClass.id), {
+        data: reschedulingClass.novaData
+      });
+      showToast('Aula reagendada com sucesso!');
+      addHistoryLog('Adiou a aula', 'Aula', reschedulingClass.id, null, reschedulingClass.novaData);
+      setReschedulingClass(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'classes');
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingClass) return;
+    try {
+      await deleteDoc(doc(db, 'classes', deletingClass.id));
+      
+      // Also delete the slots associated
+      const slotsToDelete = slots.filter(s => s.aulaId === deletingClass.id);
+      for (const slot of slotsToDelete) {
+        await deleteDoc(doc(db, 'slots', slot.id));
+      }
+      
+      showToast(`Aula "${deletingClass.nome}" excluída com sucesso.`);
+      addHistoryLog(`Excluiu a aula "${deletingClass.nome}"`, 'Aula', deletingClass.id, null, 'Excluída');
+      setDeletingClass(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'classes');
+    }
+  };
+
+  const handleToggleClassStatus = async (cls: any) => {
+    const newStatus = cls.status === 'Ativa' ? 'Pausada' : 'Ativa';
+    try {
+      await updateDoc(doc(db, 'classes', cls.id), {
+        status: newStatus
+      });
+      showToast(`Aula agora está ${newStatus.toLowerCase()}.`);
+      addHistoryLog(`Alterou o status da aula para ${newStatus}`, 'Aula', cls.id, null, newStatus);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'classes');
     }
   };
 
@@ -778,12 +833,12 @@ export default function App() {
                   <form onSubmit={handlePatientLogin} className="space-y-4">
                     <p className="text-zinc-500 text-xs text-center">Informe seus dados para ver exames ou consultar status.</p>
                     <div>
-                      <label className="block text-xs font-bold text-zinc-600 uppercase mb-1.5">Primeiro Nome</label>
+                      <label className="block text-xs font-bold text-zinc-600 uppercase mb-1.5">Nome</label>
                       <input 
                         type="text" 
-                        placeholder="Ex: João" 
-                        value={patientForm.primeiroNome}
-                        onChange={e => setPatientForm({ ...patientForm, primeiroNome: e.target.value })}
+                        placeholder="Seu nome" 
+                        value={patientForm.nome}
+                        onChange={e => setPatientForm({ ...patientForm, nome: e.target.value })}
                         className="w-full bg-zinc-50 border border-zinc-100 rounded-xl px-4 py-3.5 text-zinc-700 focus:outline-none text-sm"
                         required
                       />
@@ -802,11 +857,14 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-zinc-600 uppercase mb-1.5">Data de Nascimento</label>
+                      <label className="block text-xs font-bold text-zinc-600 uppercase mb-1.5">Ano de Nascimento</label>
                       <input 
-                        type="date" 
-                        value={patientForm.dataNascimento}
-                        onChange={e => setPatientForm({ ...patientForm, dataNascimento: e.target.value })}
+                        type="number" 
+                        placeholder="Ex: 1990"
+                        min="1900"
+                        max="2026"
+                        value={patientForm.anoNascimento}
+                        onChange={e => setPatientForm({ ...patientForm, anoNascimento: e.target.value })}
                         className="w-full bg-zinc-50 border border-zinc-100 rounded-xl px-4 py-3.5 text-zinc-700 focus:outline-none text-sm"
                         required
                       />
@@ -1350,11 +1408,74 @@ export default function App() {
                               <h3 className="text-lg font-extrabold text-zinc-950">{cls.nome}</h3>
                               <p className="text-xs text-zinc-500">Data: {cls.data} | Janela: {cls.horarioInicio} às {cls.horarioFim}</p>
                             </div>
-                            <span className="text-xs font-extrabold bg-zinc-50 px-2.5 py-1 rounded border border-zinc-100">{cls.status}</span>
+                            <span className={`text-xs font-extrabold px-2.5 py-1 rounded border ${cls.status === 'Ativa' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>
+                              {cls.status}
+                            </span>
+                          </div>
+                          
+                          <div className="flex gap-2 pt-3 border-t border-zinc-50">
+                            <button 
+                              onClick={() => handleToggleClassStatus(cls)} 
+                              className="text-[10px] uppercase font-bold text-zinc-600 bg-zinc-100 px-3 py-1.5 rounded hover:bg-zinc-200"
+                            >
+                              {cls.status === 'Ativa' ? 'Pausar Agendamentos' : 'Retomar Agendamentos'}
+                            </button>
+                            <button 
+                              onClick={() => setReschedulingClass({ id: cls.id, novaData: cls.data })} 
+                              className="text-[10px] uppercase font-bold text-zinc-600 bg-zinc-100 px-3 py-1.5 rounded hover:bg-zinc-200"
+                            >
+                              Adiar
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setDeletingClass({ id: cls.id, nome: cls.nome });
+                              }} 
+                              className="text-[10px] uppercase font-bold text-red-600 bg-red-50 border border-red-100 px-3 py-1.5 rounded hover:bg-red-100"
+                            >
+                              Excluir
+                            </button>
                           </div>
                         </div>
                       ))}
                     </div>
+
+                    {/* Modal Simples de Reagendamento */}
+                    {reschedulingClass && (
+                      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                        <div className="bg-white p-6 rounded-2xl w-full max-w-sm space-y-4">
+                          <h3 className="font-extrabold">Adiar Aula</h3>
+                          <div>
+                            <label className="block text-xs font-bold text-zinc-600 uppercase mb-1">Nova Data</label>
+                            <input 
+                              type="date" 
+                              value={reschedulingClass.novaData} 
+                              onChange={e => setReschedulingClass({ ...reschedulingClass, novaData: e.target.value })}
+                              className="w-full bg-zinc-50 border border-zinc-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-zinc-500"
+                            />
+                          </div>
+                          <div className="flex justify-end gap-3 pt-2">
+                            <button onClick={() => setReschedulingClass(null)} className="text-zinc-500 text-xs font-bold px-3">Cancelar</button>
+                            <button onClick={handleConfirmReschedule} className="bg-zinc-900 text-white text-xs font-bold px-4 py-2 rounded-xl">Confirmar</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Modal de Confirmação de Exclusão */}
+                    {deletingClass && (
+                      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                        <div className="bg-white p-6 rounded-2xl w-full max-w-sm space-y-4">
+                          <h3 className="font-extrabold text-red-600">Excluir Aula</h3>
+                          <p className="text-sm text-zinc-600">
+                            Tem certeza que deseja excluir a aula <strong>{deletingClass.nome}</strong>? Todas as vagas associadas serão removidas permanentemente.
+                          </p>
+                          <div className="flex justify-end gap-3 pt-2">
+                            <button onClick={() => setDeletingClass(null)} className="text-zinc-500 text-xs font-bold px-3">Cancelar</button>
+                            <button onClick={handleConfirmDelete} className="bg-red-600 text-white text-xs font-bold px-4 py-2 rounded-xl">Excluir</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
