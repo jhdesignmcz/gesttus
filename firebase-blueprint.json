@@ -1,0 +1,138 @@
+{
+  "entities": {
+    "Exam": {
+      "title": "Exam",
+      "description": "A medical exam type.",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string" },
+        "descricao": { "type": "string" },
+        "ativo": { "type": "boolean" }
+      },
+      "required": ["nome", "ativo"]
+    },
+    "Class": {
+      "title": "Class",
+      "description": "A practical class session.",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string" },
+        "tipoExameId": { "type": "string" },
+        "tipoExameNome": { "type": "string" },
+        "data": { "type": "string" },
+        "horarioInicio": { "type": "string" },
+        "horarioFim": { "type": "string" },
+        "intervaloAlmocoInicio": { "type": "string" },
+        "intervaloAlmocoFim": { "type": "string" },
+        "quantidadeVagas": { "type": "number" },
+        "status": { "type": "string" },
+        "criadoPor": { "type": "string" },
+        "criadoEm": { "type": "string" }
+      },
+      "required": ["nome", "tipoExameId", "data"]
+    },
+    "Slot": {
+      "title": "Slot",
+      "description": "A time slot within a class.",
+      "type": "object",
+      "properties": {
+        "aulaId": { "type": "string" },
+        "tipoExameId": { "type": "string" },
+        "data": { "type": "string" },
+        "horario": { "type": "string" },
+        "status": { "type": "string" },
+        "pacienteId": { "type": "string", "description": "Can be null or ID" }
+      },
+      "required": ["aulaId", "status"]
+    },
+    "Patient": {
+      "title": "Patient",
+      "description": "A patient profile.",
+      "type": "object",
+      "properties": {
+        "primeiroNome": { "type": "string" },
+        "nomeCompleto": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "dataNascimento": { "type": "string" },
+        "dataCadastro": { "type": "string" }
+      },
+      "required": ["primeiroNome", "whatsapp"]
+    },
+    "Registration": {
+      "title": "Registration",
+      "description": "A patient's registration for a slot.",
+      "type": "object",
+      "properties": {
+        "pacienteId": { "type": "string" },
+        "aulaId": { "type": "string" },
+        "vagaId": { "type": "string" },
+        "tipoExameId": { "type": "string" },
+        "nomePaciente": { "type": "string" },
+        "whatsappPaciente": { "type": "string" },
+        "dataNascimento": { "type": "string" },
+        "data": { "type": "string" },
+        "horario": { "type": "string" },
+        "status": { "type": "string" },
+        "criadoEm": { "type": "string" },
+        "confirmadoPor": { "type": "string" },
+        "confirmadoEm": { "type": "string" }
+      },
+      "required": ["pacienteId", "vagaId", "status"]
+    },
+    "HistoryLog": {
+      "title": "HistoryLog",
+      "description": "Audit log.",
+      "type": "object",
+      "properties": {
+        "administradorId": { "type": "string" },
+        "administradorNome": { "type": "string" },
+        "acao": { "type": "string" },
+        "entidade": { "type": "string" },
+        "entidadeId": { "type": "string" },
+        "statusAnterior": { "type": "string" },
+        "statusNovo": { "type": "string" },
+        "dataHora": { "type": "string" }
+      },
+      "required": ["acao", "entidade"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "App settings like branding.",
+      "type": "object",
+      "properties": {
+        "logoBase64": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/exams/{examId}": {
+      "schema": { "$ref": "Exam" },
+      "description": "Medical exams catalogue."
+    },
+    "/classes/{classId}": {
+      "schema": { "$ref": "Class" },
+      "description": "Practical class sessions."
+    },
+    "/slots/{slotId}": {
+      "schema": { "$ref": "Slot" },
+      "description": "Time slots for classes."
+    },
+    "/patients/{patientId}": {
+      "schema": { "$ref": "Patient" },
+      "description": "Patient profiles."
+    },
+    "/registrations/{registrationId}": {
+      "schema": { "$ref": "Registration" },
+      "description": "Patient registrations."
+    },
+    "/history/{logId}": {
+      "schema": { "$ref": "HistoryLog" },
+      "description": "Audit limits."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "Settings" },
+      "description": "App settings."
+    }
+  }
+}
